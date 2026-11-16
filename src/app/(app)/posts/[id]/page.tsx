@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, use } from "react";
+import React, { useState, useEffect, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -10,17 +10,17 @@ import {
   RefreshCw,
   XCircle,
   Copy,
-  Clock,
   Heart,
   MessageCircle,
   AlertTriangle,
   Send,
   Layers,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { StatusBadge } from "@/components/common/status-badge";
+import { StatusBadge, PostStatusType } from "@/components/common/status-badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -30,8 +30,40 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { initialPosts, Post } from "@/lib/mock-data";
+import { reschedulePostAction, cancelPostAction } from "@/actions/posts";
 import { formatDateIndo, formatNumber } from "@/lib/utils";
+
+interface PostItemData {
+  id: string;
+  position: number;
+  content: string;
+  threadsMediaId?: string | null;
+  status: string;
+}
+
+interface PostMetricData {
+  likes: number;
+  replies: number;
+  views?: number | null;
+  reposts?: number | null;
+}
+
+interface PostDetailData {
+  id: string;
+  topic?: string | null;
+  type: "single" | "thread";
+  source: string;
+  status: PostStatusType;
+  scheduledAt?: string | null;
+  publishedAt?: string | null;
+  threadsMediaId?: string | null;
+  permalink?: string | null;
+  errorMessage?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  items: PostItemData[];
+  metrics?: PostMetricData[] | PostMetricData;
+}
 
 export default function PostDetailPage({
   params,
@@ -41,17 +73,47 @@ export default function PostDetailPage({
   const router = useRouter();
   const { id } = use(params);
 
-  // Find post or fallback to post-1 or post-3
-  const post =
-    initialPosts.find((p) => p.id === id) ||
-    initialPosts[0];
+  const [post, setPost] = useState<PostDetailData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
-  const [newDate, setNewDate] = useState("2026-11-15");
-  const [newTime, setNewTime] = useState("09:00");
+  const [newDate, setNewDate] = useState("2026-11-17");
+  const [newTime, setNewTime] = useState("11:00");
   const [isRetrying, setIsRetrying] = useState(false);
 
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchPostDetail() {
+      setIsLoading(true);
+      setErrorMessage(null);
+      try {
+        const res = await fetch(`/api/posts/${id}`);
+        if (!res.ok) {
+          throw new Error("Postingan tidak ditemukan di database.");
+        }
+        const data = await res.json();
+        if (isMounted) {
+          setPost(data.post);
+        }
+      } catch (err: unknown) {
+        if (isMounted) {
+          setErrorMessage(err instanceof Error ? err.message : "Gagal memuat detail postingan.");
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+    fetchPostDetail();
+    return () => {
+      isMounted = false;
+    };
+  }, [id]);
+
   const handleCopyAll = () => {
+    if (!post || !post.items || post.items.length === 0) return;
     const fullText = post.items
       .map((item, idx) => `[${idx + 1}/${post.items.length}]\n${item.content}`)
       .join("\n\n");
@@ -68,17 +130,78 @@ export default function PostDetailPage({
     }, 1500);
   };
 
-  const handleCancelPost = () => {
-    toast.info("Postingan telah dibatalkan.");
-    router.push("/posts");
+  const handleCancelPost = async () => {
+    if (!post) return;
+    try {
+      await cancelPostAction(post.id);
+      toast.info("Postingan telah dibatalkan.");
+      router.push("/posts");
+    } catch {
+      toast.error("Gagal membatalkan postingan.");
+    }
   };
 
-  const handleConfirmReschedule = () => {
-    setRescheduleOpen(false);
-    toast.success(
-      `Jadwal postingan berhasil diperbarui ke ${newDate} pukul ${newTime} WIB.`
-    );
+  const handleConfirmReschedule = async () => {
+    if (!post) return;
+    try {
+      const targetIso = new Date(`${newDate}T${newTime}:00+07:00`).toISOString();
+      await reschedulePostAction(post.id, targetIso);
+      setRescheduleOpen(false);
+      toast.success(
+        `Jadwal postingan berhasil diperbarui ke ${newDate} pukul ${newTime} WIB.`
+      );
+      setPost((prev) =>
+        prev
+          ? {
+              ...prev,
+              scheduledAt: targetIso,
+              status: "scheduled",
+            }
+          : prev
+      );
+    } catch {
+      toast.error("Gagal memperbarui jadwal postingan.");
+    }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[40vh] space-y-3">
+        <Loader2 className="h-7 w-7 animate-spin text-primary" />
+        <p className="text-xs text-muted-foreground">Memuat detail postingan Threads...</p>
+      </div>
+    );
+  }
+
+  if (errorMessage || !post) {
+    return (
+      <div className="max-w-xl mx-auto py-12 text-center space-y-4">
+        <div className="rounded-full bg-muted h-12 w-12 flex items-center justify-center mx-auto text-muted-foreground">
+          <AlertTriangle className="h-6 w-6" />
+        </div>
+        <div className="space-y-1">
+          <h2 className="text-lg font-bold text-foreground">Postingan Tidak Ditemukan</h2>
+          <p className="text-xs text-muted-foreground">
+            {errorMessage || "Data postingan ini tidak ada di database."}
+          </p>
+        </div>
+        <Link href="/posts">
+          <Button variant="outline" size="sm" className="gap-2 text-xs">
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Kembali ke Semua Postingan
+          </Button>
+        </Link>
+      </div>
+    );
+  }
+
+  const currentMetrics = Array.isArray(post.metrics) ? post.metrics[0] : post.metrics;
+  const items = post.items || [];
+  const displayTopic =
+    post.topic ||
+    (items[0]?.content
+      ? items[0].content.slice(0, 70) + (items[0].content.length > 70 ? "..." : "")
+      : "Utas Threads");
 
   return (
     <div className="space-y-6 pb-12 max-w-4xl mx-auto">
@@ -92,8 +215,8 @@ export default function PostDetailPage({
           </Link>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="font-heading text-xl font-bold tracking-tight sm:text-2xl">
-                {post.topic}
+              <h1 className="font-heading text-xl font-bold tracking-tight sm:text-2xl line-clamp-1">
+                {displayTopic}
               </h1>
               <StatusBadge status={post.status} />
             </div>
@@ -183,14 +306,14 @@ export default function PostDetailPage({
       )}
 
       {/* Published Metrics Summary Bar */}
-      {post.status === "published" && post.metrics && (
+      {post.status === "published" && (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Card className="bg-rose-50/50 dark:bg-rose-950/20 border-rose-200/60">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
                 <p className="text-xs text-rose-700 dark:text-rose-400 font-medium">Likes</p>
                 <p className="font-heading text-xl font-bold tabular-nums text-foreground mt-0.5">
-                  {formatNumber(post.metrics.likes)}
+                  {formatNumber(currentMetrics?.likes || 0)}
                 </p>
               </div>
               <Heart className="h-6 w-6 text-rose-500 opacity-80" />
@@ -202,7 +325,7 @@ export default function PostDetailPage({
               <div>
                 <p className="text-xs text-sky-700 dark:text-sky-400 font-medium">Balasan</p>
                 <p className="font-heading text-xl font-bold tabular-nums text-foreground mt-0.5">
-                  {formatNumber(post.metrics.replies)}
+                  {formatNumber(currentMetrics?.replies || 0)}
                 </p>
               </div>
               <MessageCircle className="h-6 w-6 text-sky-500 opacity-80" />
@@ -214,7 +337,7 @@ export default function PostDetailPage({
               <div>
                 <p className="text-xs text-muted-foreground font-medium">Tayangan (Views)</p>
                 <p className="font-heading text-xl font-bold tabular-nums text-foreground mt-0.5">
-                  {formatNumber(post.metrics.views)}
+                  {formatNumber(currentMetrics?.views || 0)}
                 </p>
               </div>
               <Layers className="h-6 w-6 text-muted-foreground opacity-60" />
@@ -226,7 +349,7 @@ export default function PostDetailPage({
               <div>
                 <p className="text-xs text-muted-foreground font-medium">Reposts</p>
                 <p className="font-heading text-xl font-bold tabular-nums text-foreground mt-0.5">
-                  {formatNumber(post.metrics.reposts)}
+                  {formatNumber(currentMetrics?.reposts || 0)}
                 </p>
               </div>
               <Send className="h-6 w-6 text-muted-foreground opacity-60" />
@@ -238,18 +361,18 @@ export default function PostDetailPage({
       {/* Thread Parts Cards List */}
       <div className="space-y-4">
         <h2 className="font-heading text-base font-semibold text-foreground flex items-center gap-2">
-          Rangkaian Postingan ({post.items.length} Post)
+          Rangkaian Postingan ({items.length} Post)
         </h2>
 
-        {post.items.map((item, index) => (
-          <Card key={item.id} className="relative">
+        {items.map((item, index) => (
+          <Card key={item.id || index} className="relative">
             <CardHeader className="pb-2 pt-4 px-5 flex flex-row items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-soft text-[11px] font-bold text-primary">
                   {index + 1}
                 </span>
                 <span className="text-xs font-semibold text-foreground">
-                  Post {index + 1} dari {post.items.length}
+                  Post {index + 1} dari {items.length}
                 </span>
                 {item.threadsMediaId && (
                   <span className="font-mono text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
@@ -258,7 +381,7 @@ export default function PostDetailPage({
                 )}
               </div>
               <span className="text-xs text-muted-foreground tabular-nums">
-                {item.content.length} / 500 karakter
+                {(item.content || "").length} / 500 karakter
               </span>
             </CardHeader>
             <CardContent className="px-5 pb-5">
@@ -322,4 +445,3 @@ export default function PostDetailPage({
     </div>
   );
 }
-
