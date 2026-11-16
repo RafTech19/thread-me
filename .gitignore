@@ -33,3 +33,5 @@ yarn-error.log*
 .neon
 .vercel
 *.tsbuildinfo
+.vercel
+.env*

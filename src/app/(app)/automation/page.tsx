@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Clock,
   Plus,
@@ -30,13 +30,27 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { initialAutoSchedules, AutoSchedule } from "@/lib/mock-data";
 import { formatDateIndo } from "@/lib/utils";
-import {
-  saveAutoScheduleAction,
-  toggleAutoScheduleAction,
-  deleteAutoScheduleAction,
-} from "@/actions/automation";
+
+export interface AutoScheduleItem {
+  id: string;
+  name: string;
+  topic: string;
+  instructions?: string;
+  tone?: string;
+  language?: string;
+  format: "single" | "thread";
+  threadLength: number;
+  intervalMinutes: number;
+  windowStart: string;
+  windowEnd: string;
+  activeDays: number[];
+  mode: "auto_publish" | "review_first";
+  isActive: boolean;
+  nextRunAt?: string | null;
+  lastRunAt?: string | null;
+  totalGenerated: number;
+}
 
 const DAYS_NAMES = [
   "Minggu",
@@ -49,88 +63,109 @@ const DAYS_NAMES = [
 ];
 
 export default function AutomationPage() {
-  const [schedules, setSchedules] =
-    useState<AutoSchedule[]>(initialAutoSchedules);
+  const [schedules, setSchedules] = useState<AutoScheduleItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingSchedule, setEditingSchedule] = useState<AutoSchedule | null>(
-    null
-  );
+  const [editingSchedule, setEditingSchedule] = useState<AutoScheduleItem | null>(null);
 
   // Form Fields
   const [name, setName] = useState("");
   const [topic, setTopic] = useState("");
   const [instructions, setInstructions] = useState("");
-  const [intervalMinutes, setIntervalMinutes] = useState(360);
-  const [windowStart, setWindowStart] = useState("08:00");
-  const [windowEnd, setWindowEnd] = useState("20:00");
-  const [format, setFormat] = useState<"single" | "thread">("single");
+  const [intervalMinutes, setIntervalMinutes] = useState(1440);
+  const [windowStart, setWindowStart] = useState("10:00");
+  const [windowEnd, setWindowEnd] = useState("12:00");
+  const [format, setFormat] = useState<"single" | "thread">("thread");
   const [threadLength, setThreadLength] = useState(3);
-  const [mode, setMode] = useState<"auto_publish" | "review_first">(
-    "review_first"
-  );
-  const [activeDays, setActiveDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [mode, setMode] = useState<"auto_publish" | "review_first">("auto_publish");
+  const [activeDays, setActiveDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
+
+  const loadSchedules = async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/automation");
+      if (res.ok) {
+        const data = await res.json();
+        setSchedules(data.schedules || []);
+      }
+    } catch (err) {
+      console.error("Gagal load schedules:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadSchedules();
+  }, []);
 
   const openCreateModal = () => {
     setEditingSchedule(null);
     setName("");
     setTopic("");
     setInstructions("");
-    setIntervalMinutes(360);
-    setWindowStart("08:00");
-    setWindowEnd("20:00");
-    setFormat("single");
+    setIntervalMinutes(1440);
+    setWindowStart("10:00");
+    setWindowEnd("12:00");
+    setFormat("thread");
     setThreadLength(3);
-    setMode("review_first");
-    setActiveDays([1, 2, 3, 4, 5]);
+    setMode("auto_publish");
+    setActiveDays([0, 1, 2, 3, 4, 5, 6]);
     setModalOpen(true);
   };
 
-  const openEditModal = (sch: AutoSchedule) => {
+  const openEditModal = (sch: AutoScheduleItem) => {
     setEditingSchedule(sch);
     setName(sch.name);
     setTopic(sch.topic);
-    setInstructions(sch.instructions);
+    setInstructions(sch.instructions || "");
     setIntervalMinutes(sch.intervalMinutes);
     setWindowStart(sch.windowStart);
     setWindowEnd(sch.windowEnd);
     setFormat(sch.format);
     setThreadLength(sch.threadLength);
     setMode(sch.mode);
-    setActiveDays(sch.activeDays);
+    setActiveDays(sch.activeDays || [0, 1, 2, 3, 4, 5, 6]);
     setModalOpen(true);
   };
 
   const handleToggleActive = async (id: string, currentState: boolean) => {
+    const nextState = !currentState;
     setSchedules((prev) =>
-      prev.map((sch) => {
-        if (sch.id === id) {
-          const nextState = !sch.isActive;
-          return { ...sch, isActive: nextState };
-        }
-        return sch;
-      })
+      prev.map((sch) => (sch.id === id ? { ...sch, isActive: nextState } : sch))
     );
     try {
-      await toggleAutoScheduleAction(id, currentState);
-      toast.success(
-        `Aturan telah ${!currentState ? "diaktifkan" : "dinonaktifkan"}.`
+      const res = await fetch("/api/automation", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, isActive: nextState }),
+      });
+      if (res.ok) {
+        toast.success(`Aturan telah ${nextState ? "diaktifkan" : "dinonaktifkan"}.`);
+      } else {
+        throw new Error("Gagal update");
+      }
+    } catch {
+      // Revert state on error
+      setSchedules((prev) =>
+        prev.map((sch) => (sch.id === id ? { ...sch, isActive: currentState } : sch))
       );
-    } catch (err) {
-      console.error(err);
-      toast.success(
-        `Aturan telah ${!currentState ? "diaktifkan" : "dinonaktifkan"}.`
-      );
+      toast.error("Gagal mengubah status aturan.");
     }
   };
 
   const handleDelete = async (id: string) => {
     setSchedules((prev) => prev.filter((sch) => sch.id !== id));
     try {
-      await deleteAutoScheduleAction(id);
-      toast.success("Aturan jadwal otomatis berhasil dihapus.");
-    } catch (err) {
-      console.error(err);
-      toast.success("Aturan jadwal otomatis berhasil dihapus.");
+      const res = await fetch(`/api/automation?id=${id}`, { method: "DELETE" });
+      if (res.ok) {
+        toast.success("Aturan jadwal otomatis berhasil dihapus dari database.");
+      } else {
+        throw new Error("Gagal hapus");
+      }
+    } catch {
+      toast.error("Gagal menghapus aturan jadwal.");
+      loadSchedules();
     }
   };
 
@@ -141,68 +176,34 @@ export default function AutomationPage() {
     }
 
     try {
-      await saveAutoScheduleAction({
-        id: editingSchedule?.id,
-        name,
-        topic,
-        instructions,
-        intervalMinutes,
-        windowStart,
-        windowEnd,
-        format,
-        threadLength,
-        activeDays,
-        mode,
-      });
-
-      if (editingSchedule) {
-        setSchedules((prev) =>
-          prev.map((s) =>
-            s.id === editingSchedule.id
-              ? {
-                  ...s,
-                  name,
-                  topic,
-                  instructions,
-                  intervalMinutes,
-                  windowStart,
-                  windowEnd,
-                  format,
-                  threadLength,
-                  mode,
-                  activeDays,
-                }
-              : s
-          )
-        );
-        toast.success(`Aturan "${name}" berhasil diperbarui.`);
-      } else {
-        const newSchedule: AutoSchedule = {
-          id: `schedule-${Date.now()}`,
+      const res = await fetch("/api/automation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingSchedule?.id,
           name,
           topic,
           instructions,
-          tone: "santai",
-          language: "id",
-          format,
-          threadLength,
           intervalMinutes,
           windowStart,
           windowEnd,
+          format,
+          threadLength,
           activeDays,
           mode,
-          isActive: true,
-          nextRunAt: "2026-11-14T02:00:00Z",
-          lastRunAt: "Belum pernah",
-          totalGenerated: 0,
-        };
-        setSchedules((prev) => [...prev, newSchedule]);
-        toast.success(`Aturan "${name}" berhasil dibuat dan diaktifkan.`);
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setSchedules(data.schedules || []);
+        toast.success(`Aturan "${name}" berhasil disimpan ke database Neon.`);
+        setModalOpen(false);
+      } else {
+        throw new Error("Gagal simpan");
       }
-      setModalOpen(false);
-    } catch (err) {
-      console.error(err);
-      toast.error("Gagal menyimpan aturan.");
+    } catch {
+      toast.error("Gagal menyimpan aturan jadwal ke database.");
     }
   };
 
@@ -260,154 +261,178 @@ export default function AutomationPage() {
 
       {/* Schedules Cards List */}
       <div className="space-y-4">
-        {schedules.map((schedule) => (
-          <Card
-            key={schedule.id}
-            className={`transition-all ${
-              schedule.isActive
-                ? "border-border shadow-sm hover:border-primary/40"
-                : "border-border/60 bg-muted/20 opacity-75"
-            }`}
-          >
-            <CardHeader className="p-5 pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <CardTitle className="text-base font-bold text-foreground">
-                    {schedule.name}
-                  </CardTitle>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold select-none ${
-                      schedule.isActive
-                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200"
-                        : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 border border-zinc-200"
-                    }`}
-                  >
-                    {schedule.isActive ? "Aktif Berjalan" : "Nonaktif"}
-                  </span>
-                  <span className="rounded bg-muted px-2 py-0.5 text-[11px] font-medium">
-                    {schedule.mode === "auto_publish"
-                      ? "Langsung Terbit"
-                      : "Tinjau Dulu (Draft)"}
-                  </span>
-                </div>
-                <CardDescription className="text-xs">
-                  Topik: <span className="font-medium text-foreground">{schedule.topic}</span>
-                </CardDescription>
-              </div>
-
-              {/* Toggle Switch */}
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-muted-foreground font-medium">
-                  {schedule.isActive ? "Aktif" : "Mati"}
-                </span>
-                <Switch
-                  checked={schedule.isActive}
-                  onCheckedChange={() =>
-                    handleToggleActive(schedule.id, schedule.isActive)
-                  }
-                />
-              </div>
-            </CardHeader>
-
-            <CardContent className="p-5 pt-2 space-y-4">
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 rounded-lg bg-muted/40 p-3 text-xs">
-                <div>
-                  <p className="text-[10px] text-muted-foreground font-medium">
-                    Interval Waktu
-                  </p>
-                  <p className="font-semibold text-foreground mt-0.5">
-                    Setiap {schedule.intervalMinutes / 60} Jam
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-[10px] text-muted-foreground font-medium">
-                    Jam Operasional
-                  </p>
-                  <p className="font-semibold text-foreground mt-0.5">
-                    {schedule.windowStart} - {schedule.windowEnd} WIB
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-[10px] text-muted-foreground font-medium">
-                    Format Konten
-                  </p>
-                  <p className="font-semibold text-foreground mt-0.5 capitalize">
-                    {schedule.format === "thread"
-                      ? `Thread (${schedule.threadLength} Post)`
-                      : "Post Tunggal"}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-[10px] text-muted-foreground font-medium">
-                    Total Dihasilkan
-                  </p>
-                  <p className="font-semibold text-foreground mt-0.5">
-                    {schedule.totalGenerated} Postingan
-                  </p>
-                </div>
-              </div>
-
-              {/* Active Days Pills */}
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-xs text-muted-foreground font-medium mr-1">
-                  Hari Aktif:
-                </span>
-                {DAYS_NAMES.map((dayName, idx) => {
-                  const isDayActive = schedule.activeDays.includes(idx);
-                  return (
+        {isLoading ? (
+          <div className="space-y-3">
+            {[1, 2].map((i) => (
+              <div
+                key={i}
+                className="h-44 rounded-xl border border-border bg-card/60 p-6 animate-pulse"
+              />
+            ))}
+          </div>
+        ) : schedules.length === 0 ? (
+          <Card className="p-8 text-center border-dashed">
+            <p className="text-sm font-medium text-foreground">
+              Belum ada aturan jadwal otomatis
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Klik tombol &quot;Buat Aturan Baru&quot; di atas untuk membuat jadwal posting otomatis AI.
+            </p>
+          </Card>
+        ) : (
+          schedules.map((schedule) => (
+            <Card
+              key={schedule.id}
+              className={`transition-all ${
+                schedule.isActive
+                  ? "border-border shadow-sm hover:border-primary/40"
+                  : "border-border/60 bg-muted/20 opacity-75"
+              }`}
+            >
+              <CardHeader className="p-5 pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <CardTitle className="text-base font-bold text-foreground">
+                      {schedule.name}
+                    </CardTitle>
                     <span
-                      key={dayName}
-                      className={`rounded px-2 py-0.5 text-[11px] font-medium ${
-                        isDayActive
-                          ? "bg-primary-soft text-primary font-semibold"
-                          : "bg-muted text-muted-foreground opacity-50"
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold select-none ${
+                        schedule.isActive
+                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200"
+                          : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 border border-zinc-200"
                       }`}
                     >
-                      {dayName}
+                      {schedule.isActive ? "Aktif Berjalan" : "Nonaktif"}
                     </span>
-                  );
-                })}
-              </div>
+                    <span className="rounded bg-muted px-2 py-0.5 text-[11px] font-medium">
+                      {schedule.mode === "auto_publish"
+                        ? "Langsung Terbit"
+                        : "Tinjau Dulu (Draft)"}
+                    </span>
+                  </div>
+                  <CardDescription className="text-xs">
+                    Topik: <span className="font-medium text-foreground">{schedule.topic}</span>
+                  </CardDescription>
+                </div>
 
-              {/* Footer row with Next Run and Actions */}
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-3 border-t border-border/80">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Calendar className="h-3.5 w-3.5 text-primary" />
-                  <span>
-                    Jadwal berikutnya:{" "}
-                    <strong className="text-foreground">
-                      {schedule.nextRunAt ? formatDateIndo(schedule.nextRunAt) : "-"}
-                    </strong>
+                {/* Toggle Switch */}
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground font-medium">
+                    {schedule.isActive ? "Aktif" : "Mati"}
                   </span>
+                  <Switch
+                    checked={schedule.isActive}
+                    onCheckedChange={() =>
+                      handleToggleActive(schedule.id, schedule.isActive)
+                    }
+                  />
+                </div>
+              </CardHeader>
+
+              <CardContent className="p-5 pt-2 space-y-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 rounded-lg bg-muted/40 p-3 text-xs">
+                  <div>
+                    <p className="text-[10px] text-muted-foreground font-medium">
+                      Interval Waktu
+                    </p>
+                    <p className="font-semibold text-foreground mt-0.5">
+                      {schedule.intervalMinutes >= 1440
+                        ? "Setiap 24 Jam (1 Hari Sekali)"
+                        : `Setiap ${Math.round(schedule.intervalMinutes / 60)} Jam`}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-[10px] text-muted-foreground font-medium">
+                      Jam Operasional
+                    </p>
+                    <p className="font-semibold text-foreground mt-0.5">
+                      {schedule.windowStart} - {schedule.windowEnd} WIB
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-[10px] text-muted-foreground font-medium">
+                      Format Konten
+                    </p>
+                    <p className="font-semibold text-foreground mt-0.5 capitalize">
+                      {schedule.format === "thread"
+                        ? `Thread (${schedule.threadLength || 3} Post)`
+                        : "Post Tunggal"}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-[10px] text-muted-foreground font-medium">
+                      Total Dihasilkan
+                    </p>
+                    <p className="font-semibold text-foreground mt-0.5">
+                      {schedule.totalGenerated || 0} Postingan
+                    </p>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => openEditModal(schedule)}
-                    className="h-8 text-xs gap-1.5"
-                  >
-                    <Edit2 className="h-3 w-3" />
-                    Edit
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDelete(schedule.id)}
-                    className="h-8 text-xs text-destructive hover:bg-destructive/10 gap-1.5"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                    Hapus
-                  </Button>
+                {/* Active Days Pills */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground font-medium mr-1">
+                    Hari Aktif:
+                  </span>
+                  {DAYS_NAMES.map((dayName, idx) => {
+                    const isDayActive = (schedule.activeDays || []).includes(idx);
+                    return (
+                      <span
+                        key={dayName}
+                        className={`rounded px-2 py-0.5 text-[11px] font-medium ${
+                          isDayActive
+                            ? "bg-primary-soft text-primary font-semibold"
+                            : "bg-muted text-muted-foreground opacity-50"
+                        }`}
+                      >
+                        {dayName}
+                      </span>
+                    );
+                  })}
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+
+                {/* Footer row with Next Run and Actions */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-3 border-t border-border/80">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Calendar className="h-3.5 w-3.5 text-primary" />
+                    <span>
+                      Jadwal berikutnya:{" "}
+                      <strong className="text-foreground">
+                        {schedule.nextRunAt
+                          ? formatDateIndo(schedule.nextRunAt)
+                          : "Setiap Hari pukul 11.00 WIB"}
+                      </strong>
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openEditModal(schedule)}
+                      className="h-8 text-xs gap-1.5"
+                    >
+                      <Edit2 className="h-3 w-3" />
+                      Edit
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDelete(schedule.id)}
+                      className="h-8 text-xs text-destructive hover:bg-destructive/10 gap-1.5"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      Hapus
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        )}
       </div>
 
       {/* Create / Edit Rule Modal Dialog */}
@@ -566,17 +591,15 @@ export default function AutomationPage() {
               </Select>
             </div>
 
-            {/* Preview of next 3 execution times */}
+            {/* Preview of execution times */}
             <div className="rounded-lg bg-muted/40 p-3 text-xs space-y-1.5 border border-border">
               <p className="font-semibold text-foreground flex items-center gap-1.5">
                 <Calendar className="h-3.5 w-3.5 text-primary" />
-                Pratinjau 3 Jadwal Eksekusi Berikutnya:
+                Ringkasan Eksekusi Jadwal:
               </p>
-              <ul className="list-disc pl-5 space-y-0.5 text-muted-foreground">
-                <li>13 Nov 2026 pukul 08.00 WIB</li>
-                <li>13 Nov 2026 pukul 14.00 WIB</li>
-                <li>13 Nov 2026 pukul 20.00 WIB</li>
-              </ul>
+              <p className="text-muted-foreground leading-relaxed">
+                Konten otomatis diproduksi setiap {intervalMinutes >= 1440 ? "24 Jam (1 hari sekali)" : `${Math.round(intervalMinutes / 60)} Jam`} pada rentang jam {windowStart} - {windowEnd} WIB selama hari aktif yang dipilih.
+              </p>
             </div>
           </div>
 
