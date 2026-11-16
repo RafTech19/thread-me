@@ -401,9 +401,16 @@ export default function AutomationPage() {
                     <span>
                       Jadwal berikutnya:{" "}
                       <strong className="text-foreground">
-                        {schedule.nextRunAt
-                          ? formatDateIndo(schedule.nextRunAt)
-                          : "Setiap Hari pukul 11.00 WIB"}
+                        {(() => {
+                          const isAllDays = (schedule.activeDays || []).length === 7;
+                          const daysLabel = isAllDays
+                            ? "Setiap Hari"
+                            : (schedule.activeDays || []).map((d) => DAYS_NAMES[d]).join(", ");
+                          const timeLabel = `${daysLabel} pukul ${schedule.windowStart} WIB`;
+                          return schedule.nextRunAt
+                            ? `${timeLabel} (Berikutnya: ${formatDateIndo(schedule.nextRunAt)})`
+                            : timeLabel;
+                        })()}
                       </strong>
                     </span>
                   </div>

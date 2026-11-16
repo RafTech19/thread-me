@@ -1,0 +1,17 @@
+name: ThreadMe Cloud Automation Cron
+
+on:
+  schedule:
+    # Berjalan setiap 30 menit (menit 0 dan 30) untuk mengevaluasi jadwal otomatis
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+jobs:
+  tick:
+    name: Ping ThreadMe Cron Tick
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger /api/cron/tick
+        run: |
+          curl -s -S --retry 3 --max-time 60 \
+            "https://thread-me-gray.vercel.app/api/cron/tick?key=threadme_cron_secret_key_super_secure_random_string_123"

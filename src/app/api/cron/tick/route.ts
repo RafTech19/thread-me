@@ -2,15 +2,16 @@ import { NextResponse } from "next/server";
 import { db, schema } from "@/db";
 import { ThreadsClient } from "@/lib/threads/client";
 import { generateThreadWithGemini } from "@/lib/ai/gemini";
-import { eq, and, lte, or, isNull } from "drizzle-orm";
+import { eq, and, lte } from "drizzle-orm";
+import { computeNextRunAt } from "@/lib/schedule-helper";
 import crypto from "crypto";
 
 /**
  * Route Handler Cron Tick (/api/cron/tick)
- * Frekuensi: Setiap 1 menit
+ * Frekuensi: Berkala (Cloud Cron / GitHub Actions / Vercel Cron)
  * Tugas Utama:
- * 1. Otomasi Konten: Mengecek aturan auto_schedules yang jatuh tempo -> panggil Gemini -> buat post
- * 2. Publikasi Otomatis: Mengecek postingan berstatus scheduled yang sudah jatuh tempo -> unggah ke Threads via ThreadsClient
+ * 1. Publikasi Otomatis: Mengecek postingan berstatus scheduled yang sudah jatuh tempo -> unggah ke Threads via ThreadsClient
+ * 2. Otomasi Konten: Mengecek aturan auto_schedules yang jatuh tempo dan dalam jam operasional WIB -> panggil Gemini -> buat post & langsung publish jika auto_publish
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -157,11 +158,47 @@ export async function GET(request: Request) {
     });
 
     for (const sched of activeSchedules) {
-      // Cek apakah waktu saat ini masuk jam operasional dan interval jam sudah lewat
-      const lastRun = sched.lastRunAt ? new Date(sched.lastRunAt).getTime() : 0;
-      const intervalMs = (sched.intervalMinutes || 360) * 60 * 1000;
+      // 1. Cek apakah hari ini adalah hari aktif (WIB = UTC+7)
+      const nowWib = new Date(Date.now() + 7 * 60 * 60 * 1000);
+      const currentDay = nowWib.getUTCDay();
+      const currentMins = nowWib.getUTCHours() * 60 + nowWib.getUTCMinutes();
 
-      if (Date.now() - lastRun >= intervalMs) {
+      const activeDays = sched.activeDays || [0, 1, 2, 3, 4, 5, 6];
+      if (!activeDays.includes(currentDay)) {
+        continue;
+      }
+
+      // 2. Cek rentang jam operasional
+      const [startH, startM] = (sched.windowStart || "08:00").split(":").map(Number);
+      const [endH, endM] = (sched.windowEnd || "21:00").split(":").map(Number);
+      const startMins = (isNaN(startH) ? 8 : startH) * 60 + (isNaN(startM) ? 0 : startM);
+      const endMins = (isNaN(endH) ? 21 : endH) * 60 + (isNaN(endM) ? 0 : endM);
+
+      const inWindow =
+        startMins <= endMins
+          ? currentMins >= startMins && currentMins <= endMins
+          : currentMins >= startMins || currentMins <= endMins;
+
+      if (!inWindow) {
+        continue;
+      }
+
+      // 3. Cek interval dan cegah eksekusi ganda di tanggal yang sama (WIB)
+      const lastRun = sched.lastRunAt ? new Date(sched.lastRunAt).getTime() : 0;
+      const intervalMs = (sched.intervalMinutes || 1440) * 60 * 1000;
+      const isDaily = (sched.intervalMinutes || 1440) >= 1440;
+
+      const alreadyRanTodayWib =
+        isDaily &&
+        sched.lastRunAt &&
+        new Date(new Date(sched.lastRunAt).getTime() + 7 * 3600 * 1000).getUTCDate() === nowWib.getUTCDate() &&
+        new Date(new Date(sched.lastRunAt).getTime() + 7 * 3600 * 1000).getUTCMonth() === nowWib.getUTCMonth();
+
+      if (alreadyRanTodayWib) {
+        continue;
+      }
+
+      if (Date.now() - lastRun >= intervalMs || !sched.lastRunAt) {
         try {
           // Generate konten via Gemini
           const aiRes = await generateThreadWithGemini({
@@ -284,11 +321,14 @@ export async function GET(request: Request) {
             });
           }
 
-          // Perbarui lastRunAt pada jadwal
+          // Perbarui lastRunAt dan hitung nextRunAt pada jadwal
+          const nextRunCalculated = computeNextRunAt(sched.windowStart, sched.activeDays || [0, 1, 2, 3, 4, 5, 6]);
+
           await db
             .update(schema.autoSchedules)
             .set({
               lastRunAt: new Date(),
+              nextRunAt: nextRunCalculated,
               totalGenerated: (sched.totalGenerated || 0) + 1,
               updatedAt: new Date(),
             })

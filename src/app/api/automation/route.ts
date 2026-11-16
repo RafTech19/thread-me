@@ -3,6 +3,7 @@ import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import * as schema from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
+import { computeNextRunAt } from "@/lib/schedule-helper";
 
 export const dynamic = "force-dynamic";
 
@@ -21,9 +22,29 @@ export async function GET() {
       return NextResponse.json({ schedules: [], error: "Database offline" }, { status: 500 });
     }
 
-    const schedules = await db.query.autoSchedules.findMany({
+    const rawSchedules = await db.query.autoSchedules.findMany({
       orderBy: [desc(schema.autoSchedules.createdAt)],
     });
+
+    const now = new Date();
+    const schedules = await Promise.all(
+      rawSchedules.map(async (sch) => {
+        // Jika nextRunAt null atau sudah lewat, hitung ulang dan simpan
+        if (!sch.nextRunAt || new Date(sch.nextRunAt) <= now) {
+          const freshNextRun = computeNextRunAt(sch.windowStart, sch.activeDays || [0, 1, 2, 3, 4, 5, 6]);
+          try {
+            await db
+              .update(schema.autoSchedules)
+              .set({ nextRunAt: freshNextRun, updatedAt: now })
+              .where(eq(schema.autoSchedules.id, sch.id));
+          } catch {
+            // Abaikan kegagalan update background
+          }
+          return { ...sch, nextRunAt: freshNextRun.toISOString() };
+        }
+        return sch;
+      })
+    );
 
     return NextResponse.json({ schedules });
   } catch (err: unknown) {
@@ -62,6 +83,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "Nama dan topik wajib diisi" }, { status: 400 });
     }
 
+    const calculatedNextRun = computeNextRunAt(windowStart, activeDays);
+
     if (id) {
       // Update
       await db
@@ -77,6 +100,7 @@ export async function POST(request: Request) {
           threadLength,
           mode,
           activeDays,
+          nextRunAt: calculatedNextRun,
           updatedAt: new Date(),
         })
         .where(eq(schema.autoSchedules.id, id));
@@ -93,6 +117,7 @@ export async function POST(request: Request) {
         threadLength,
         mode,
         activeDays,
+        nextRunAt: calculatedNextRun,
         isActive: true,
         totalGenerated: 0,
         createdAt: new Date(),
