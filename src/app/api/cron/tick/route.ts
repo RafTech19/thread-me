@@ -173,30 +173,114 @@ export async function GET(request: Request) {
             feature: "auto_schedule",
           });
 
-          const postStatus = sched.mode === "auto_publish" ? "scheduled" : "draft";
-          const scheduledTime = new Date(Date.now() + 10 * 60 * 1000); // 10 menit ke depan
+          // Jika mode auto_publish, terbitkan langsung secara instan ke Threads
+          if (sched.mode === "auto_publish") {
+            try {
+              const threadChain = aiRes.posts.map((item) => ({
+                position: item.position,
+                content: item.content,
+              }));
 
-          const [newPost] = await db
-            .insert(schema.posts)
-            .values({
-              topic: sched.topic,
-              type: sched.format,
-              source: "automation",
-              status: postStatus,
-              scheduledAt: sched.mode === "auto_publish" ? scheduledTime : null,
-              aiGenerated: true,
-              autoScheduleId: sched.id,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            })
-            .returning();
+              const pubResult = await client.publishThreadChain(threadChain);
 
-          for (const item of aiRes.posts) {
-            await db.insert(schema.postItems).values({
+              const [newPost] = await db
+                .insert(schema.posts)
+                .values({
+                  topic: aiRes.posts[0]?.content.slice(0, 100) || sched.topic,
+                  type: sched.format,
+                  source: "automation",
+                  status: "published",
+                  publishedAt: new Date(),
+                  threadsMediaId: pubResult.rootMediaId,
+                  permalink: pubResult.permalink,
+                  aiGenerated: true,
+                  autoScheduleId: sched.id,
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                })
+                .returning();
+
+              for (const it of pubResult.items) {
+                const matchItem = aiRes.posts.find((p) => p.position === it.position);
+                await db.insert(schema.postItems).values({
+                  postId: newPost.id,
+                  position: it.position,
+                  content: matchItem?.content || "",
+                  status: "published",
+                  threadsMediaId: it.mediaId,
+                  publishedAt: new Date(),
+                });
+              }
+
+              // Buat notifikasi published
+              await db.insert(schema.notifications).values({
+                type: "post_published",
+                title: "Utas Otomatis Berhasil Terbit!",
+                message: `Jadwal "${sched.name}" telah otomatis memposting utas baru ke akun @kaitodex.19.`,
+                postId: newPost.id,
+                linkUrl: pubResult.permalink,
+              });
+
+              results.publishedPosts++;
+            } catch (pubErr) {
+              console.error(`Gagal auto-publish langsung untuk ${sched.name}:`, pubErr);
+              // Fallback simpan sebagai scheduled
+              const [newPost] = await db
+                .insert(schema.posts)
+                .values({
+                  topic: sched.topic,
+                  type: sched.format,
+                  source: "automation",
+                  status: "scheduled",
+                  scheduledAt: new Date(Date.now() + 5 * 60 * 1000),
+                  aiGenerated: true,
+                  autoScheduleId: sched.id,
+                  createdAt: new Date(),
+                  updatedAt: new Date(),
+                })
+                .returning();
+
+              for (const item of aiRes.posts) {
+                await db.insert(schema.postItems).values({
+                  postId: newPost.id,
+                  position: item.position,
+                  content: item.content,
+                  status: "scheduled",
+                });
+              }
+            }
+          } else {
+            // Mode review_first: simpan sebagai draft
+            const [newPost] = await db
+              .insert(schema.posts)
+              .values({
+                topic: sched.topic,
+                type: sched.format,
+                source: "automation",
+                status: "draft",
+                aiGenerated: true,
+                autoScheduleId: sched.id,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              })
+              .returning();
+
+            for (const item of aiRes.posts) {
+              await db.insert(schema.postItems).values({
+                postId: newPost.id,
+                position: item.position,
+                content: item.content,
+                status: "draft",
+              });
+            }
+
+            // Buat notifikasi draft_ready
+            await db.insert(schema.notifications).values({
+              type: "draft_ready",
+              title: "Draft Otomasi Baru Siap Ditinjau",
+              message: `Otomasi "${sched.name}" telah berhasil membuat konten baru seputar: ${sched.topic.slice(0, 45)}...`,
               postId: newPost.id,
-              position: item.position,
-              content: item.content,
-              status: postStatus,
+              linkUrl: `/posts/${newPost.id}`,
             });
           }
 
@@ -209,15 +293,6 @@ export async function GET(request: Request) {
               updatedAt: new Date(),
             })
             .where(eq(schema.autoSchedules.id, sched.id));
-
-          // Buat notifikasi draft_ready
-          await db.insert(schema.notifications).values({
-            type: "draft_ready",
-            title: sched.mode === "auto_publish" ? "Jadwal Otomasi Siap Diterbitkan" : "Draft Otomasi Baru Siap Ditinjau",
-            message: `Otomasi "${sched.name}" telah berhasil membuat konten baru seputar: ${sched.topic.slice(0, 45)}...`,
-            postId: newPost.id,
-            linkUrl: `/posts/${newPost.id}`,
-          });
 
           results.processedSchedules++;
         } catch (genErr) {
