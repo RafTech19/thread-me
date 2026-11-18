@@ -65,6 +65,7 @@ const DAYS_NAMES = [
 export default function AutomationPage() {
   const [schedules, setSchedules] = useState<AutoScheduleItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isTriggeringId, setIsTriggeringId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<AutoScheduleItem | null>(null);
 
@@ -166,6 +167,25 @@ export default function AutomationPage() {
     } catch {
       toast.error("Gagal menghapus aturan jadwal.");
       loadSchedules();
+    }
+  };
+
+  const handleTriggerNow = async (id: string) => {
+    setIsTriggeringId(id);
+    toast.info("Menjalankan jadwal otomatis... AI Gemini sedang memproduksi konten & menerbitkan ke Threads...");
+    try {
+      const res = await fetch("/api/cron/tick?key=threadme_cron_secret_key_super_secure_random_string_123&force=true");
+      const data = await res.json();
+      if (data.success) {
+        toast.success("Berhasil! Konten jadwal otomatis telah berhasil diproduksi dan dipublikasikan.");
+        loadSchedules();
+      } else {
+        toast.error(`Gagal menjalankan jadwal: ${data.error || "Unknown error"}`);
+      }
+    } catch {
+      toast.error("Gagal memanggil endpoint cron.");
+    } finally {
+      setIsTriggeringId(null);
     }
   };
 
@@ -416,6 +436,16 @@ export default function AutomationPage() {
                   </div>
 
                   <div className="flex items-center gap-2">
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => handleTriggerNow(schedule.id)}
+                      disabled={isTriggeringId === schedule.id}
+                      className="h-8 text-xs gap-1.5 font-semibold bg-primary text-primary-foreground shadow-sm"
+                    >
+                      <Play className={`h-3 w-3 ${isTriggeringId === schedule.id ? "animate-spin" : ""}`} />
+                      {isTriggeringId === schedule.id ? "Memproses..." : "Jalankan Sekarang"}
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"

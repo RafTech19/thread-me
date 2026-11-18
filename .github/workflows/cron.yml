@@ -2,8 +2,8 @@ name: ThreadMe Cloud Automation Cron
 
 on:
   schedule:
-    # Berjalan setiap 30 menit (menit 0 dan 30) untuk mengevaluasi jadwal otomatis
-    - cron: '*/30 * * * *'
+    # Berjalan setiap 15 menit untuk memastikan tidak ada jadwal yang terlewat
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 jobs:

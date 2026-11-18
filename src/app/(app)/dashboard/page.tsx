@@ -39,6 +39,15 @@ export default function DashboardPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [realPosts, setRealPosts] = useState<any[]>([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
+  const [liveSummary, setLiveSummary] = useState<{
+    views: number;
+    viewers: number;
+    followers: number;
+    likes: number;
+    replies: number;
+    interactions: number;
+    totalPosts: number;
+  } | null>(null);
 
   const data = threadsOfficialAnalyticsData;
 
@@ -50,6 +59,9 @@ export default function DashboardPage() {
         if (res.ok) {
           const data = await res.json();
           setRealPosts(data.posts || []);
+          if (data.summary) {
+            setLiveSummary(data.summary);
+          }
         }
       } catch (err) {
         console.error("Gagal load initial posts:", err);
@@ -64,6 +76,9 @@ export default function DashboardPage() {
           const syncData = await syncRes.json();
           if (syncData.success && syncData.posts) {
             setRealPosts(syncData.posts);
+            if (syncData.summary) {
+              setLiveSummary(syncData.summary);
+            }
           }
         }
       } catch (syncErr) {
@@ -83,6 +98,9 @@ export default function DashboardPage() {
       const data = await res.json();
       if (data.success && data.posts) {
         setRealPosts(data.posts);
+        if (data.summary) {
+          setLiveSummary(data.summary);
+        }
         toast.success(`Berhasil! ${data.synced} postingan live beserta likes & replies tersinkronisasi.`);
       } else {
         // Fallback: load from DB
@@ -90,6 +108,9 @@ export default function DashboardPage() {
         if (fallback.ok) {
           const fb = await fallback.json();
           setRealPosts(fb.posts || []);
+          if (fb.summary) {
+            setLiveSummary(fb.summary);
+          }
         }
         toast.warning(`Sinkronisasi selesai${data.error ? `: ${data.error}` : ""}`);
       }
@@ -173,7 +194,9 @@ export default function DashboardPage() {
               </span>
             </div>
             <div className="text-3xl font-bold font-heading text-foreground mt-1">
-              {data.summary.views.total.toLocaleString("id-ID")}
+              {liveSummary
+                ? liveSummary.views.toLocaleString("id-ID")
+                : data.summary.views.total.toLocaleString("id-ID")}
             </div>
           </CardHeader>
           <CardContent className="px-5 pb-3 pt-2">
@@ -195,7 +218,9 @@ export default function DashboardPage() {
               </span>
             </div>
             <div className="text-3xl font-bold font-heading text-foreground mt-1">
-              {data.summary.viewers.total.toLocaleString("id-ID")}
+              {liveSummary
+                ? liveSummary.viewers.toLocaleString("id-ID")
+                : data.summary.viewers.total.toLocaleString("id-ID")}
             </div>
           </CardHeader>
           <CardContent className="px-5 pb-3 pt-2">
@@ -209,7 +234,7 @@ export default function DashboardPage() {
           <CardHeader className="pb-1 pt-4 px-5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Pengikut Baru (Net)
+                Total Pengikut (Followers)
               </span>
               <span className="inline-flex items-center gap-0.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">
                 +{data.summary.netFollowers.growthPercent}%
@@ -217,7 +242,7 @@ export default function DashboardPage() {
               </span>
             </div>
             <div className="text-3xl font-bold font-heading text-foreground mt-1">
-              +{data.summary.netFollowers.total}
+              {liveSummary ? liveSummary.followers : `+${data.summary.netFollowers.total}`}
             </div>
           </CardHeader>
           <CardContent className="px-5 pb-3 pt-2">
@@ -238,7 +263,9 @@ export default function DashboardPage() {
               </span>
             </div>
             <div className="text-3xl font-bold font-heading text-foreground mt-1">
-              {data.summary.interactions.total}
+              {liveSummary
+                ? liveSummary.interactions.toLocaleString("id-ID")
+                : data.summary.interactions.total}
             </div>
           </CardHeader>
           <CardContent className="px-5 pb-3 pt-2">

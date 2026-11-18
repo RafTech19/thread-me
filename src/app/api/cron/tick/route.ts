@@ -18,6 +18,7 @@ export async function GET(request: Request) {
   const authHeader = request.headers.get("authorization");
   const xCronSecret = request.headers.get("x-cron-secret");
   const queryKey = url.searchParams.get("key");
+  const isForce = url.searchParams.get("force") === "true";
   const cronSecret = process.env.CRON_SECRET || "threadme_cron_secret_key_super_secure_random_string_123";
 
   // Verifikasi token keamanan cron via Bearer header, x-cron-secret, atau query param ?key=
@@ -158,57 +159,59 @@ export async function GET(request: Request) {
     });
 
     for (const sched of activeSchedules) {
-      // 1. Cek apakah hari ini adalah hari aktif (WIB = UTC+7)
-      const nowWib = new Date(Date.now() + 7 * 60 * 60 * 1000);
-      const currentDay = nowWib.getUTCDay();
-      const currentMins = nowWib.getUTCHours() * 60 + nowWib.getUTCMinutes();
+      if (!isForce) {
+        // 1. Cek apakah hari ini adalah hari aktif (WIB = UTC+7)
+        const nowWib = new Date(Date.now() + 7 * 60 * 60 * 1000);
+        const currentDay = nowWib.getUTCDay();
+        const currentMins = nowWib.getUTCHours() * 60 + nowWib.getUTCMinutes();
 
-      const activeDays = sched.activeDays || [0, 1, 2, 3, 4, 5, 6];
-      if (!activeDays.includes(currentDay)) {
-        continue;
+        const activeDays = sched.activeDays || [0, 1, 2, 3, 4, 5, 6];
+        if (!activeDays.includes(currentDay)) {
+          continue;
+        }
+
+        // 2. Cek apakah waktu saat ini sudah mencapai atau melewati waktu mulai (windowStart)
+        const [startH, startM] = (sched.windowStart || "08:00").split(":").map(Number);
+        const startMins = (isNaN(startH) ? 8 : startH) * 60 + (isNaN(startM) ? 0 : startM);
+
+        if (currentMins < startMins) {
+          // Belum masuk jam mulai eksekusi hari ini
+          continue;
+        }
+
+        // 3. Cek apakah sudah pernah jalan pada tanggal WIB yang sama
+        const isDaily = (sched.intervalMinutes || 1440) >= 1440;
+        const alreadyRanTodayWib =
+          isDaily &&
+          sched.lastRunAt &&
+          new Date(new Date(sched.lastRunAt).getTime() + 7 * 3600 * 1000).getUTCDate() === nowWib.getUTCDate() &&
+          new Date(new Date(sched.lastRunAt).getTime() + 7 * 3600 * 1000).getUTCMonth() === nowWib.getUTCMonth() &&
+          new Date(new Date(sched.lastRunAt).getTime() + 7 * 3600 * 1000).getUTCFullYear() === nowWib.getUTCFullYear();
+
+        if (alreadyRanTodayWib) {
+          continue;
+        }
+
+        // 4. Cek interval minimum jika bukan jadwal harian
+        if (!isDaily && sched.lastRunAt) {
+          const lastRun = new Date(sched.lastRunAt).getTime();
+          const intervalMs = (sched.intervalMinutes || 360) * 60 * 1000;
+          if (Date.now() - lastRun < intervalMs) {
+            continue;
+          }
+        }
       }
 
-      // 2. Cek rentang jam operasional
-      const [startH, startM] = (sched.windowStart || "08:00").split(":").map(Number);
-      const [endH, endM] = (sched.windowEnd || "21:00").split(":").map(Number);
-      const startMins = (isNaN(startH) ? 8 : startH) * 60 + (isNaN(startM) ? 0 : startM);
-      const endMins = (isNaN(endH) ? 21 : endH) * 60 + (isNaN(endM) ? 0 : endM);
-
-      const inWindow =
-        startMins <= endMins
-          ? currentMins >= startMins && currentMins <= endMins
-          : currentMins >= startMins || currentMins <= endMins;
-
-      if (!inWindow) {
-        continue;
-      }
-
-      // 3. Cek interval dan cegah eksekusi ganda di tanggal yang sama (WIB)
-      const lastRun = sched.lastRunAt ? new Date(sched.lastRunAt).getTime() : 0;
-      const intervalMs = (sched.intervalMinutes || 1440) * 60 * 1000;
-      const isDaily = (sched.intervalMinutes || 1440) >= 1440;
-
-      const alreadyRanTodayWib =
-        isDaily &&
-        sched.lastRunAt &&
-        new Date(new Date(sched.lastRunAt).getTime() + 7 * 3600 * 1000).getUTCDate() === nowWib.getUTCDate() &&
-        new Date(new Date(sched.lastRunAt).getTime() + 7 * 3600 * 1000).getUTCMonth() === nowWib.getUTCMonth();
-
-      if (alreadyRanTodayWib) {
-        continue;
-      }
-
-      if (Date.now() - lastRun >= intervalMs || !sched.lastRunAt) {
-        try {
-          // Generate konten via Gemini
-          const aiRes = await generateThreadWithGemini({
-            topic: sched.topic,
-            format: sched.format as "single" | "thread",
-            threadLength: sched.threadLength,
-            tone: sched.tone,
-            language: sched.language,
-            feature: "auto_schedule",
-          });
+      try {
+        // Generate konten via Gemini
+        const aiRes = await generateThreadWithGemini({
+          topic: sched.topic,
+          format: sched.format as "single" | "thread",
+          threadLength: sched.threadLength,
+          tone: sched.tone,
+          language: sched.language,
+          feature: "auto_schedule",
+        });
 
           // Jika mode auto_publish, terbitkan langsung secara instan ke Threads
           if (sched.mode === "auto_publish") {
@@ -338,7 +341,6 @@ export async function GET(request: Request) {
         } catch (genErr) {
           console.error(`Gagal generate otomatis untuk jadwal ${sched.name}:`, genErr);
         }
-      }
     }
 
     return NextResponse.json({ success: true, results });
