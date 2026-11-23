@@ -17,6 +17,7 @@ import {
   MessageCircle,
   AlertTriangle,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { StatusBadge, PostStatusType } from "@/components/common/status-badge";
@@ -58,6 +59,7 @@ export default function PostsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [postToDelete, setPostToDelete] = useState<any | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const loadPosts = async () => {
     setIsLoading(true);
@@ -75,6 +77,7 @@ export default function PostsPage() {
 
     // Auto-sync live metrik di background
     try {
+      setIsSyncing(true);
       const syncRes = await fetch("/api/posts/sync", { method: "POST" });
       if (syncRes.ok) {
         const syncData = await syncRes.json();
@@ -84,6 +87,31 @@ export default function PostsPage() {
       }
     } catch (e) {
       // Background silent fallback
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleSyncMetrics = async () => {
+    setIsSyncing(true);
+    toast.info("Menyinkronkan metrik terbaru dari Meta Threads...");
+    try {
+      const syncRes = await fetch("/api/posts/sync", { method: "POST" });
+      if (syncRes.ok) {
+        const syncData = await syncRes.json();
+        if (syncData.success && syncData.posts) {
+          setPostsList(syncData.posts);
+          toast.success(`Berhasil! ${syncData.synced} postingan telah diperbarui.`);
+        } else {
+          toast.warning("Sinkronisasi selesai.");
+        }
+      } else {
+        toast.error("Gagal menyinkronkan data dari Meta.");
+      }
+    } catch {
+      toast.error("Terjadi kendala saat sinkronisasi.");
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -148,12 +176,25 @@ export default function PostsPage() {
           </p>
         </div>
 
-        <Link href="/generator">
-          <Button size="sm" className="gap-1.5 text-xs font-semibold shadow-sm">
-            <Plus className="h-4 w-4" />
-            Buat Postingan Baru
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSyncMetrics}
+            disabled={isSyncing}
+            className="gap-1.5 text-xs font-semibold"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin" : ""}`} />
+            {isSyncing ? "Menyinkronkan..." : "Sinkronkan Metrik"}
           </Button>
-        </Link>
+
+          <Link href="/generator">
+            <Button size="sm" className="gap-1.5 text-xs font-semibold shadow-sm">
+              <Plus className="h-4 w-4" />
+              Buat Postingan Baru
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Filter and Search Bar */}

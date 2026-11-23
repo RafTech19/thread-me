@@ -81,6 +81,7 @@ export default function PostDetailPage({
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isRefreshingMetrics, setIsRefreshingMetrics] = useState(false);
   const [newDate, setNewDate] = useState("2026-11-17");
   const [newTime, setNewTime] = useState("11:00");
   const [isRetrying, setIsRetrying] = useState(false);
@@ -131,6 +132,25 @@ export default function PostDetailPage({
       setIsRetrying(false);
       toast.success("Percobaan publikasi ulang berhasil terkirim!");
     }, 1500);
+  };
+
+  const handleRefreshMetrics = async () => {
+    setIsRefreshingMetrics(true);
+    toast.info("Menyinkronkan metrik terbaru dari Threads...");
+    try {
+      const res = await fetch(`/api/posts/${id}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPost(data.post);
+        toast.success("Metrik postingan berhasil diperbarui!");
+      } else {
+        toast.warning("Gagal mengambil metrik terbaru.");
+      }
+    } catch {
+      toast.error("Terjadi kendala saat menyegarkan metrik.");
+    } finally {
+      setIsRefreshingMetrics(false);
+    }
   };
 
   const handleCancelPost = async () => {
@@ -304,6 +324,19 @@ export default function PostDetailPage({
                 Batalkan
               </Button>
             </>
+          )}
+
+          {post.status === "published" && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefreshMetrics}
+              disabled={isRefreshingMetrics}
+              className="text-xs gap-1.5"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isRefreshingMetrics ? "animate-spin" : ""}`} />
+              Segarkan Metrik
+            </Button>
           )}
 
           {post.permalink && (

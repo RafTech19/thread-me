@@ -41,6 +41,45 @@ export async function GET(
       return NextResponse.json({ error: "Postingan tidak ditemukan" }, { status: 404 });
     }
 
+    // Jika sudah terbit dan memiliki threadsMediaId, ambil metrik live terbaru dari Threads API
+    if (post.status === "published" && post.threadsMediaId && !post.threadsMediaId.startsWith("mock_")) {
+      try {
+        const { ThreadsClient } = await import("@/lib/threads/client");
+        const client = new ThreadsClient();
+        await client.init();
+        const liveMetrics = await client.fetchPostMetrics(post.threadsMediaId);
+
+        if (liveMetrics && (liveMetrics.views > 0 || liveMetrics.likes > 0)) {
+          // Simpan snapshot terbaru ke database
+          await db.insert(schema.postMetrics).values({
+            postId: post.id,
+            likes: liveMetrics.likes,
+            replies: liveMetrics.replies,
+            views: liveMetrics.views,
+            reposts: liveMetrics.reposts,
+            quotes: liveMetrics.quotes,
+            fetchedAt: new Date(),
+          });
+
+          // Perbarui metrik yang dikirimkan ke frontend
+          (post as any).metrics = [
+            {
+              id: "live_metric_latest",
+              postId: post.id,
+              likes: liveMetrics.likes,
+              replies: liveMetrics.replies,
+              views: liveMetrics.views,
+              reposts: liveMetrics.reposts,
+              quotes: liveMetrics.quotes,
+              fetchedAt: new Date().toISOString(),
+            },
+          ];
+        }
+      } catch (liveErr) {
+        console.warn("Gagal fetch live metrics untuk post:", liveErr);
+      }
+    }
+
     return NextResponse.json({ post });
   } catch (err: unknown) {
     console.error("[GET /api/posts/[id]] Error:", err);
