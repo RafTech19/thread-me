@@ -116,7 +116,14 @@ export default function PostsPage() {
       if (res?.deletedFromThreads) {
         toast.success("Postingan berhasil dihapus dari akun Threads (@kaitodex.19) dan ThreadMe.");
       } else if (res?.threadsError) {
-        toast.warning(`Postingan dihapus dari database ThreadMe. Info Meta: ${res.threadsError}`);
+        if (res.threadsError.toLowerCase().includes("permission")) {
+          toast.warning(
+            "Postingan terhapus dari ThreadMe, tetapi gagal terhapus di Threads karena token akun belum memiliki izin 'threads_delete'. Silakan buka Pengaturan dan klik 'Hubungkan Ulang Akun Threads'.",
+            { duration: 8000 }
+          );
+        } else {
+          toast.warning(`Postingan dihapus dari database ThreadMe. Info Meta: ${res.threadsError}`);
+        }
       } else {
         toast.success("Postingan berhasil dihapus.");
       }
