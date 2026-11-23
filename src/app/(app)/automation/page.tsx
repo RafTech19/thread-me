@@ -14,6 +14,9 @@ import {
   CheckCircle2,
   AlertCircle,
   HelpCircle,
+  Copy,
+  Check,
+  Radio,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -80,6 +83,19 @@ export default function AutomationPage() {
   const [threadLength, setThreadLength] = useState(3);
   const [mode, setMode] = useState<"auto_publish" | "review_first">("auto_publish");
   const [activeDays, setActiveDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]);
+  const [hasCopiedWebhook, setHasCopiedWebhook] = useState(false);
+
+  const webhookUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/api/cron/tick?key=threadme_cron_secret_key_super_secure_random_string_123`
+      : "https://thread-me-gray.vercel.app/api/cron/tick?key=threadme_cron_secret_key_super_secure_random_string_123";
+
+  const copyWebhook = () => {
+    navigator.clipboard.writeText(webhookUrl);
+    setHasCopiedWebhook(true);
+    toast.success("Webhook URL cron berhasil disalin ke clipboard!");
+    setTimeout(() => setHasCopiedWebhook(false), 3000);
+  };
 
   const loadSchedules = async () => {
     setIsLoading(true);
@@ -262,19 +278,45 @@ export default function AutomationPage() {
         </Button>
       </div>
 
-      {/* Info Notice Box */}
+      {/* Info & Runner Status Box */}
       <Card className="bg-primary-soft/30 border-primary/20">
-        <CardContent className="p-4 flex items-start gap-3">
-          <Clock className="h-5 w-5 text-primary shrink-0 mt-0.5" />
-          <div className="space-y-1 text-xs text-foreground/90 leading-relaxed">
-            <p className="font-semibold text-primary">Cara Kerja Mesin Jadwal Otomatis</p>
-            <p>
-              Mesin cron mengevaluasi aturan setiap menit. Ketika waktu jatuh tempo tercapai
-              di dalam jam operasional Anda, AI Gemini otomatis memproduksi postingan baru.
-              Hasilnya dapat langsung terjadwal (<em>Auto Publish</em>) atau disimpan ke Draft
-              disertai notifikasi agar Anda dapat meninjaunya terlebih dahulu. Untuk berita terkini,
-              link sumber resmi otomatis dilampirkan.
-            </p>
+        <CardContent className="p-4 space-y-3">
+          <div className="flex items-start gap-3">
+            <Clock className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+            <div className="space-y-1 text-xs text-foreground/90 leading-relaxed flex-1">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <p className="font-semibold text-primary">Cara Kerja & Status Mesin Otomasi</p>
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Auto-Runner Browser Aktif
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/10 text-blue-600 border border-blue-500/20">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                    GitHub Actions Cloud
+                  </span>
+                </div>
+              </div>
+              <p>
+                Mesin cron mengevaluasi aturan jadwal Anda secara otomatis. Selama tab ThreadMe dibuka di browser, <strong>Auto-Runner internal</strong> akan mengecek dan mempublikasikan postingan yang jatuh tempo setiap 60 detik. AI Gemini otomatis memproduksi konten dan menerbitkannya ke akun Threads <strong>@kaitodex.19</strong> sesuai jam operasional WIB.
+              </p>
+            </div>
+          </div>
+
+          {/* Webhook trigger URL bar for 24/7 background cron */}
+          <div className="pt-2 border-t border-primary/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <span className="text-muted-foreground text-[11px]">
+              <strong>Eksternal Webhook Cron 24/7 (Opsional):</strong> Gunakan URL ini di <span className="text-foreground font-medium">cron-job.org</span> atau UptimeRobot jika ingin otomasi berjalan 24 jam nonstop bahkan saat browser/laptop ditutup.
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={copyWebhook}
+              className="h-7 text-[11px] gap-1.5 shrink-0 bg-background/80 hover:bg-background border-primary/20"
+            >
+              {hasCopiedWebhook ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+              {hasCopiedWebhook ? "Tersalin!" : "Salin Webhook URL"}
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -300,175 +342,193 @@ export default function AutomationPage() {
             </p>
           </Card>
         ) : (
-          schedules.map((schedule) => (
-            <Card
-              key={schedule.id}
-              className={`transition-all ${
-                schedule.isActive
-                  ? "border-border shadow-sm hover:border-primary/40"
-                  : "border-border/60 bg-muted/20 opacity-75"
-              }`}
-            >
-              <CardHeader className="p-5 pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <CardTitle className="text-base font-bold text-foreground">
-                      {schedule.name}
-                    </CardTitle>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold select-none ${
-                        schedule.isActive
-                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200"
-                          : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 border border-zinc-200"
-                      }`}
-                    >
-                      {schedule.isActive ? "Aktif Berjalan" : "Nonaktif"}
-                    </span>
-                    <span className="rounded bg-muted px-2 py-0.5 text-[11px] font-medium">
-                      {schedule.mode === "auto_publish"
-                        ? "Langsung Terbit"
-                        : "Tinjau Dulu (Draft)"}
-                    </span>
-                  </div>
-                  <CardDescription className="text-xs">
-                    Topik: <span className="font-medium text-foreground">{schedule.topic}</span>
-                  </CardDescription>
-                </div>
+          schedules.map((schedule) => {
+            const nowWib = new Date(Date.now() + 7 * 3600 * 1000);
+            const isRanToday =
+              Boolean(schedule.lastRunAt) &&
+              new Date(new Date(schedule.lastRunAt!).getTime() + 7 * 3600 * 1000).getUTCDate() === nowWib.getUTCDate() &&
+              new Date(new Date(schedule.lastRunAt!).getTime() + 7 * 3600 * 1000).getUTCMonth() === nowWib.getUTCMonth() &&
+              new Date(new Date(schedule.lastRunAt!).getTime() + 7 * 3600 * 1000).getUTCFullYear() === nowWib.getUTCFullYear();
 
-                {/* Toggle Switch */}
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-muted-foreground font-medium">
-                    {schedule.isActive ? "Aktif" : "Mati"}
-                  </span>
-                  <Switch
-                    checked={schedule.isActive}
-                    onCheckedChange={() =>
-                      handleToggleActive(schedule.id, schedule.isActive)
-                    }
-                  />
-                </div>
-              </CardHeader>
-
-              <CardContent className="p-5 pt-2 space-y-4">
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 rounded-lg bg-muted/40 p-3 text-xs">
-                  <div>
-                    <p className="text-[10px] text-muted-foreground font-medium">
-                      Interval Waktu
-                    </p>
-                    <p className="font-semibold text-foreground mt-0.5">
-                      {schedule.intervalMinutes >= 1440
-                        ? "Setiap 24 Jam (1 Hari Sekali)"
-                        : `Setiap ${Math.round(schedule.intervalMinutes / 60)} Jam`}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-[10px] text-muted-foreground font-medium">
-                      Jam Operasional
-                    </p>
-                    <p className="font-semibold text-foreground mt-0.5">
-                      {schedule.windowStart} - {schedule.windowEnd} WIB
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-[10px] text-muted-foreground font-medium">
-                      Format Konten
-                    </p>
-                    <p className="font-semibold text-foreground mt-0.5 capitalize">
-                      {schedule.format === "thread"
-                        ? `Thread (${schedule.threadLength || 3} Post)`
-                        : "Post Tunggal"}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-[10px] text-muted-foreground font-medium">
-                      Total Dihasilkan
-                    </p>
-                    <p className="font-semibold text-foreground mt-0.5">
-                      {schedule.totalGenerated || 0} Postingan
-                    </p>
-                  </div>
-                </div>
-
-                {/* Active Days Pills */}
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-xs text-muted-foreground font-medium mr-1">
-                    Hari Aktif:
-                  </span>
-                  {DAYS_NAMES.map((dayName, idx) => {
-                    const isDayActive = (schedule.activeDays || []).includes(idx);
-                    return (
+            return (
+              <Card
+                key={schedule.id}
+                className={`transition-all ${
+                  schedule.isActive
+                    ? "border-border shadow-sm hover:border-primary/40"
+                    : "border-border/60 bg-muted/20 opacity-75"
+                }`}
+              >
+                <CardHeader className="p-5 pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center flex-wrap gap-2">
+                      <CardTitle className="text-base font-bold text-foreground">
+                        {schedule.name}
+                      </CardTitle>
                       <span
-                        key={dayName}
-                        className={`rounded px-2 py-0.5 text-[11px] font-medium ${
-                          isDayActive
-                            ? "bg-primary-soft text-primary font-semibold"
-                            : "bg-muted text-muted-foreground opacity-50"
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold select-none ${
+                          schedule.isActive
+                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 border border-emerald-200"
+                            : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 border border-zinc-200"
                         }`}
                       >
-                        {dayName}
+                        {schedule.isActive ? "Aktif Berjalan" : "Nonaktif"}
                       </span>
-                    );
-                  })}
-                </div>
+                      <span className="rounded bg-muted px-2 py-0.5 text-[11px] font-medium">
+                        {schedule.mode === "auto_publish"
+                          ? "Langsung Terbit"
+                          : "Tinjau Dulu (Draft)"}
+                      </span>
+                      {isRanToday ? (
+                        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">
+                          ✓ Terbit Hari Ini
+                        </span>
+                      ) : (
+                        <span className="rounded-full px-2 py-0.5 text-[10px] font-semibold bg-amber-500/10 text-amber-600 border border-amber-500/20">
+                          Menunggu Jadwal Hari Ini
+                        </span>
+                      )}
+                    </div>
+                    <CardDescription className="text-xs">
+                      Topik: <span className="font-medium text-foreground">{schedule.topic}</span>
+                    </CardDescription>
+                  </div>
 
-                {/* Footer row with Next Run and Actions */}
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-3 border-t border-border/80">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Calendar className="h-3.5 w-3.5 text-primary" />
-                    <span>
-                      Jadwal berikutnya:{" "}
-                      <strong className="text-foreground">
-                        {(() => {
-                          const isAllDays = (schedule.activeDays || []).length === 7;
-                          const daysLabel = isAllDays
-                            ? "Setiap Hari"
-                            : (schedule.activeDays || []).map((d) => DAYS_NAMES[d]).join(", ");
-                          const timeLabel = `${daysLabel} pukul ${schedule.windowStart} WIB`;
-                          return schedule.nextRunAt
-                            ? `${timeLabel} (Berikutnya: ${formatDateIndo(schedule.nextRunAt)})`
-                            : timeLabel;
-                        })()}
-                      </strong>
+                  {/* Toggle Switch */}
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-muted-foreground font-medium">
+                      {schedule.isActive ? "Aktif" : "Mati"}
                     </span>
+                    <Switch
+                      checked={schedule.isActive}
+                      onCheckedChange={() =>
+                        handleToggleActive(schedule.id, schedule.isActive)
+                      }
+                    />
+                  </div>
+                </CardHeader>
+
+                <CardContent className="p-5 pt-2 space-y-4">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 rounded-lg bg-muted/40 p-3 text-xs">
+                    <div>
+                      <p className="text-[10px] text-muted-foreground font-medium">
+                        Interval Waktu
+                      </p>
+                      <p className="font-semibold text-foreground mt-0.5">
+                        {schedule.intervalMinutes >= 1440
+                          ? "Setiap 24 Jam (1 Hari Sekali)"
+                          : `Setiap ${Math.round(schedule.intervalMinutes / 60)} Jam`}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-[10px] text-muted-foreground font-medium">
+                        Jam Operasional
+                      </p>
+                      <p className="font-semibold text-foreground mt-0.5">
+                        {schedule.windowStart} - {schedule.windowEnd} WIB
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-[10px] text-muted-foreground font-medium">
+                        Format Konten
+                      </p>
+                      <p className="font-semibold text-foreground mt-0.5 capitalize">
+                        {schedule.format === "thread"
+                          ? `Thread (${schedule.threadLength || 3} Post)`
+                          : "Post Tunggal"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-[10px] text-muted-foreground font-medium">
+                        Total Dihasilkan
+                      </p>
+                      <p className="font-semibold text-foreground mt-0.5">
+                        {schedule.totalGenerated || 0} Postingan
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={() => handleTriggerNow(schedule.id)}
-                      disabled={isTriggeringId === schedule.id}
-                      className="h-8 text-xs gap-1.5 font-semibold bg-primary text-primary-foreground shadow-sm"
-                    >
-                      <Play className={`h-3 w-3 ${isTriggeringId === schedule.id ? "animate-spin" : ""}`} />
-                      {isTriggeringId === schedule.id ? "Memproses..." : "Jalankan Sekarang"}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => openEditModal(schedule)}
-                      className="h-8 text-xs gap-1.5"
-                    >
-                      <Edit2 className="h-3 w-3" />
-                      Edit
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDelete(schedule.id)}
-                      className="h-8 text-xs text-destructive hover:bg-destructive/10 gap-1.5"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                      Hapus
-                    </Button>
+                  {/* Active Days Pills */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs text-muted-foreground font-medium mr-1">
+                      Hari Aktif:
+                    </span>
+                    {DAYS_NAMES.map((dayName, idx) => {
+                      const isDayActive = (schedule.activeDays || []).includes(idx);
+                      return (
+                        <span
+                          key={dayName}
+                          className={`rounded px-2 py-0.5 text-[11px] font-medium ${
+                            isDayActive
+                              ? "bg-primary-soft text-primary font-semibold"
+                              : "bg-muted text-muted-foreground opacity-50"
+                          }`}
+                        >
+                          {dayName}
+                        </span>
+                      );
+                    })}
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))
+
+                  {/* Footer row with Next Run and Actions */}
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-3 border-t border-border/80">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Calendar className="h-3.5 w-3.5 text-primary" />
+                      <span>
+                        Jadwal berikutnya:{" "}
+                        <strong className="text-foreground">
+                          {(() => {
+                            const isAllDays = (schedule.activeDays || []).length === 7;
+                            const daysLabel = isAllDays
+                              ? "Setiap Hari"
+                              : (schedule.activeDays || []).map((d) => DAYS_NAMES[d]).join(", ");
+                            if (isRanToday) {
+                              return `Besok pukul ${schedule.windowStart} WIB (${schedule.nextRunAt ? formatDateIndo(schedule.nextRunAt) : "Besok"})`;
+                            }
+                            return `${daysLabel} pukul ${schedule.windowStart} WIB (Hari ini)`;
+                          })()}
+                        </strong>
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => handleTriggerNow(schedule.id)}
+                        disabled={isTriggeringId === schedule.id}
+                        className="h-8 text-xs gap-1.5 font-semibold bg-primary text-primary-foreground shadow-sm"
+                      >
+                        <Play className={`h-3 w-3 ${isTriggeringId === schedule.id ? "animate-spin" : ""}`} />
+                        {isTriggeringId === schedule.id ? "Memproses..." : "Jalankan Sekarang"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openEditModal(schedule)}
+                        className="h-8 text-xs gap-1.5"
+                      >
+                        <Edit2 className="h-3 w-3" />
+                        Edit
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDelete(schedule.id)}
+                        className="h-8 text-xs text-destructive hover:bg-destructive/10 gap-1.5"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        Hapus
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })
         )}
       </div>
 

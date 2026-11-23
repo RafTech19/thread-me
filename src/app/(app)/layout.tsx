@@ -1,6 +1,7 @@
 import React from "react";
 import { Sidebar } from "@/components/layout/sidebar";
 import { TopHeader } from "@/components/layout/top-header";
+import { CronAutoRunner } from "@/components/cron-auto-runner";
 
 export default function AppLayout({
   children,
@@ -9,6 +10,9 @@ export default function AppLayout({
 }) {
   return (
     <div className="flex min-h-screen bg-muted/20">
+      {/* Background Auto-Runner untuk mengecek jadwal otomatis & terjadwal saat app aktif */}
+      <CronAutoRunner />
+
       {/* Desktop Fixed Sidebar */}
       <div className="hidden md:fixed md:inset-y-0 md:flex md:w-64 md:flex-col">
         <Sidebar />

@@ -5,10 +5,11 @@ import { generateThreadWithGemini } from "@/lib/ai/gemini";
 import { eq, and, lte } from "drizzle-orm";
 import { computeNextRunAt } from "@/lib/schedule-helper";
 import crypto from "crypto";
+import { auth } from "@/auth";
 
 /**
  * Route Handler Cron Tick (/api/cron/tick)
- * Frekuensi: Berkala (Cloud Cron / GitHub Actions / Vercel Cron)
+ * Frekuensi: Berkala (Cloud Cron / GitHub Actions / Vercel Cron / Client AutoRunner)
  * Tugas Utama:
  * 1. Publikasi Otomatis: Mengecek postingan berstatus scheduled yang sudah jatuh tempo -> unggah ke Threads via ThreadsClient
  * 2. Otomasi Konten: Mengecek aturan auto_schedules yang jatuh tempo dan dalam jam operasional WIB -> panggil Gemini -> buat post & langsung publish jika auto_publish
@@ -21,14 +22,26 @@ export async function GET(request: Request) {
   const isForce = url.searchParams.get("force") === "true";
   const cronSecret = process.env.CRON_SECRET || "threadme_cron_secret_key_super_secure_random_string_123";
 
-  // Verifikasi token keamanan cron via Bearer header, x-cron-secret, atau query param ?key=
+  // Verifikasi token keamanan cron via Bearer header, x-cron-secret, query param ?key=, atau sesi login owner
   const expectedHeader = `Bearer ${cronSecret}`;
-  const isAuthorized =
+  let isAuthorized =
     (authHeader &&
       authHeader.length === expectedHeader.length &&
       crypto.timingSafeEqual(Buffer.from(authHeader), Buffer.from(expectedHeader))) ||
     xCronSecret === cronSecret ||
     queryKey === cronSecret;
+
+  if (!isAuthorized) {
+    try {
+      const session = await auth();
+      const ownerEmail = (process.env.OWNER_EMAIL || "rafli.bim05@gmail.com").toLowerCase().trim();
+      if (session?.user?.email && session.user.email.toLowerCase().trim() === ownerEmail) {
+        isAuthorized = true;
+      }
+    } catch {
+      // Sesi check gagal
+    }
+  }
 
   if (!isAuthorized) {
     return NextResponse.json({ error: "Unauthorized cron access" }, { status: 401 });
@@ -51,10 +64,11 @@ export async function GET(request: Request) {
     // ========================================================
     // TUGAS 1: PUBLIKASI POSTINGAN JATUH TEMPO
     // ========================================================
+    const graceFuture = new Date(Date.now() + 3 * 60 * 1000); // Toleransi 3 menit ke depan
     const pendingPosts = await db.query.posts.findMany({
       where: and(
         eq(schema.posts.status, "scheduled"),
-        lte(schema.posts.scheduledAt, now)
+        lte(schema.posts.scheduledAt, graceFuture)
       ),
       with: {
         items: true,
@@ -170,12 +184,12 @@ export async function GET(request: Request) {
           continue;
         }
 
-        // 2. Cek apakah waktu saat ini sudah mencapai atau melewati waktu mulai (windowStart)
+        // 2. Cek apakah waktu saat ini sudah mencapai atau mendekati waktu mulai (windowStart) dengan toleransi 5 menit
         const [startH, startM] = (sched.windowStart || "08:00").split(":").map(Number);
         const startMins = (isNaN(startH) ? 8 : startH) * 60 + (isNaN(startM) ? 0 : startM);
 
-        if (currentMins < startMins) {
-          // Belum masuk jam mulai eksekusi hari ini
+        if (currentMins < startMins - 5) {
+          // Belum masuk jam mulai eksekusi hari ini (toleransi 5 menit sebelum windowStart)
           continue;
         }
 

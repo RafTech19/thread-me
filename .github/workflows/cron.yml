@@ -2,8 +2,8 @@ name: ThreadMe Cloud Automation Cron
 
 on:
   schedule:
-    # Berjalan setiap 15 menit untuk memastikan tidak ada jadwal yang terlewat
-    - cron: '*/15 * * * *'
+    # Berjalan setiap 15 menit dengan menit off-peak untuk menghindari delay antrian runner GitHub
+    - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
 
 jobs:
