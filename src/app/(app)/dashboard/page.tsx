@@ -30,7 +30,7 @@ import {
   TableBody,
   TableCell,
 } from "@/components/ui/table";
-import { threadsOfficialAnalyticsData } from "@/lib/threads/analytics-data";
+import { threadsOfficialAnalyticsData, SparklinePoint } from "@/lib/threads/analytics-data";
 import { ThreadsSparkline } from "@/components/dashboard/threads-sparkline";
 // Posts loaded via /api/posts and /api/posts/sync routes (more reliable than server actions in client components)
 import { formatDateIndo } from "@/lib/utils";
@@ -47,6 +47,13 @@ export default function DashboardPage() {
     replies: number;
     interactions: number;
     totalPosts: number;
+    viewsGrowth?: number;
+    viewersGrowth?: number;
+    viewsTrend?: SparklinePoint[];
+    viewersTrend?: SparklinePoint[];
+    netFollowersTrend?: SparklinePoint[];
+    interactionsTrend?: SparklinePoint[];
+    periodLabel?: string;
   } | null>(null);
 
   const data = threadsOfficialAnalyticsData;
@@ -71,6 +78,7 @@ export default function DashboardPage() {
 
       // 2. Sinkronkan secara otomatis dengan Meta Threads API di latar belakang
       try {
+        setIsSyncing(true);
         const syncRes = await fetch("/api/posts/sync", { method: "POST" });
         if (syncRes.ok) {
           const syncData = await syncRes.json();
@@ -84,6 +92,8 @@ export default function DashboardPage() {
       } catch (syncErr) {
         // Abaikan jika offline / rate limited, data cache DB sudah terpasang
         console.warn("Background auto-sync info:", syncErr);
+      } finally {
+        setIsSyncing(false);
       }
     }
 
@@ -151,7 +161,9 @@ export default function DashboardPage() {
             <p className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
               <span>Laporan Analitik Resmi Threads</span>
               <span>&bull;</span>
-              <span className="font-medium text-foreground">{data.profile.periodLabel}</span>
+              <span className="font-medium text-foreground">
+                {liveSummary?.periodLabel || data.profile.periodLabel}
+              </span>
               <span>&bull;</span>
               <span>Zona Waktu: {data.profile.timezone}</span>
             </p>
@@ -189,18 +201,20 @@ export default function DashboardPage() {
                 Tayangan (Views)
               </span>
               <span className="inline-flex items-center gap-0.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                +{data.summary.views.growthPercent}%
+                +{liveSummary?.viewsGrowth ?? data.summary.views.growthPercent}%
                 <TrendingUp className="h-3 w-3" />
               </span>
             </div>
             <div className="text-3xl font-bold font-heading text-foreground mt-1">
-              {liveSummary
-                ? liveSummary.views.toLocaleString("id-ID")
-                : data.summary.views.total.toLocaleString("id-ID")}
+              {(liveSummary?.views ?? data.summary.views.total).toLocaleString("id-ID")}
             </div>
           </CardHeader>
           <CardContent className="px-5 pb-3 pt-2">
-            <ThreadsSparkline data={data.summary.views.trend} color="#2563eb" height={50} />
+            <ThreadsSparkline
+              data={liveSummary?.viewsTrend || data.summary.views.trend}
+              color="#2563eb"
+              height={50}
+            />
             <p className="text-[11px] text-muted-foreground mt-1 text-right">30 hari terakhir</p>
           </CardContent>
         </Card>
@@ -213,18 +227,20 @@ export default function DashboardPage() {
                 Pemirsa Unik (Viewers)
               </span>
               <span className="inline-flex items-center gap-0.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                +{data.summary.viewers.growthPercent}%
+                +{liveSummary?.viewersGrowth ?? data.summary.viewers.growthPercent}%
                 <TrendingUp className="h-3 w-3" />
               </span>
             </div>
             <div className="text-3xl font-bold font-heading text-foreground mt-1">
-              {liveSummary
-                ? liveSummary.viewers.toLocaleString("id-ID")
-                : data.summary.viewers.total.toLocaleString("id-ID")}
+              {(liveSummary?.viewers ?? data.summary.viewers.total).toLocaleString("id-ID")}
             </div>
           </CardHeader>
           <CardContent className="px-5 pb-3 pt-2">
-            <ThreadsSparkline data={data.summary.viewers.trend} color="#8b5cf6" height={50} />
+            <ThreadsSparkline
+              data={liveSummary?.viewersTrend || data.summary.viewers.trend}
+              color="#8b5cf6"
+              height={50}
+            />
             <p className="text-[11px] text-muted-foreground mt-1 text-right">30 hari terakhir</p>
           </CardContent>
         </Card>
@@ -246,7 +262,11 @@ export default function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="px-5 pb-3 pt-2">
-            <ThreadsSparkline data={data.summary.netFollowers.trend} color="#10b981" height={50} />
+            <ThreadsSparkline
+              data={liveSummary?.netFollowersTrend || data.summary.netFollowers.trend}
+              color="#10b981"
+              height={50}
+            />
             <p className="text-[11px] text-muted-foreground mt-1 text-right">30 hari terakhir</p>
           </CardContent>
         </Card>
@@ -263,13 +283,15 @@ export default function DashboardPage() {
               </span>
             </div>
             <div className="text-3xl font-bold font-heading text-foreground mt-1">
-              {liveSummary
-                ? liveSummary.interactions.toLocaleString("id-ID")
-                : data.summary.interactions.total}
+              {(liveSummary?.interactions ?? data.summary.interactions.total).toLocaleString("id-ID")}
             </div>
           </CardHeader>
           <CardContent className="px-5 pb-3 pt-2">
-            <ThreadsSparkline data={data.summary.interactions.trend} color="#f59e0b" height={50} />
+            <ThreadsSparkline
+              data={liveSummary?.interactionsTrend || data.summary.interactions.trend}
+              color="#f59e0b"
+              height={50}
+            />
             <p className="text-[11px] text-muted-foreground mt-1 text-right">30 hari terakhir</p>
           </CardContent>
         </Card>
@@ -290,7 +312,7 @@ export default function DashboardPage() {
                   </CardTitle>
                 </div>
                 <span className="rounded-full bg-primary-soft text-primary px-2.5 py-0.5 text-xs font-bold">
-                  724 Pemirsa (+752%)
+                  {data.audienceReach.totalViewers.toLocaleString("id-ID")} Pemirsa (+{data.audienceReach.growthPercent}%)
                 </span>
               </div>
               <CardDescription className="text-xs">
@@ -360,7 +382,7 @@ export default function DashboardPage() {
               <div className="p-3 rounded-xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/60 dark:bg-blue-950/30 text-xs text-foreground leading-relaxed flex items-start gap-2.5">
                 <Flame className="h-4 w-4 text-primary shrink-0 mt-0.5" />
                 <p>
-                  <strong className="font-semibold text-primary">Efek Viral Algoritma Kuat:</strong> 98.9% pemirsa Anda berasal dari audiens baru yang belum mem-follow Anda. Ini menandakan konten yang diterbitkan sangat disukai algoritma eksplorasi Threads.
+                  <strong className="font-semibold text-primary">Efek Viral Algoritma Kuat:</strong> {data.audienceReach.nonFollowers.percentage}% pemirsa Anda berasal dari audiens baru yang belum mem-follow Anda. Ini menandakan konten yang diterbitkan sangat disukai algoritma eksplorasi Threads.
                 </p>
               </div>
             </CardContent>

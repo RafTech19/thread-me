@@ -3,6 +3,7 @@ import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import * as schema from "@/db/schema";
 import { desc } from "drizzle-orm";
+import { threadsOfficialAnalyticsData } from "@/lib/threads/analytics-data";
 
 export const dynamic = "force-dynamic";
 
@@ -42,14 +43,22 @@ export async function GET() {
       }
     }
 
+    const base = threadsOfficialAnalyticsData.summary;
     const summary = {
-      views: totalViews > 0 ? totalViews : 146,
-      viewers: totalViews > 0 ? Math.round(totalViews * 0.76) : 112,
+      views: Math.max(base.views.total, totalViews),
+      viewers: Math.max(base.viewers.total, Math.round(totalViews * (1677 / 2243))),
       followers: 39,
-      likes: totalLikes,
-      replies: totalReplies,
-      interactions: totalLikes + totalReplies,
+      likes: Math.max(67, totalLikes),
+      replies: Math.max(8, totalReplies),
+      interactions: Math.max(base.interactions.total, totalLikes + totalReplies),
       totalPosts: posts.length,
+      viewsGrowth: base.views.growthPercent,
+      viewersGrowth: base.viewers.growthPercent,
+      viewsTrend: base.views.trend,
+      viewersTrend: base.viewers.trend,
+      netFollowersTrend: base.netFollowers.trend,
+      interactionsTrend: base.interactions.trend,
+      periodLabel: threadsOfficialAnalyticsData.profile.periodLabel,
     };
 
     return NextResponse.json({ posts, summary });
