@@ -274,5 +274,46 @@ export class ThreadsClient {
 
     return { likes: 0, replies: 0, views: 0, reposts: 0, quotes: 0 };
   }
+
+  /**
+   * 6. Hapus postingan di Threads via Meta Graph API
+   * Endpoint: DELETE https://graph.threads.net/v1.0/{threads-media-id}
+   */
+  async deletePost(mediaId: string): Promise<{ success: boolean; error?: string }> {
+    if (this.isMock || !this.accessToken || mediaId.startsWith("mock_")) {
+      return { success: true };
+    }
+
+    try {
+      const url = `https://graph.threads.net/v1.0/${mediaId}?access_token=${this.accessToken}`;
+      const res = await fetch(url, {
+        method: "DELETE",
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        // Jika postingan sudah tidak ada di Meta (misal sudah dihapus lewat aplikasi Threads)
+        // Meta mengembalikan code 100 / subcode 33 atau "does not exist"
+        if (
+          data?.error?.code === 100 ||
+          data?.error?.error_subcode === 33 ||
+          (data?.error?.message && data.error.message.includes("does not exist"))
+        ) {
+          return { success: true };
+        }
+
+        const errorMsg = data?.error?.message || `Threads delete error: ${res.status}`;
+        console.warn(`[ThreadsClient.deletePost] Gagal menghapus media ${mediaId}:`, data);
+        return { success: false, error: errorMsg };
+      }
+
+      return { success: true };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Gagal menghapus postingan di Threads";
+      console.error("[ThreadsClient.deletePost] Exception:", err);
+      return { success: false, error: msg };
+    }
+  }
 }
 

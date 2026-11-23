@@ -50,3 +50,21 @@ export async function GET(
     );
   }
 }
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const { deletePostAction } = await import("@/actions/posts");
+    const result = await deletePostAction(id);
+    return NextResponse.json(result);
+  } catch (err: unknown) {
+    console.error("[DELETE /api/posts/[id]] Error:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Gagal menghapus postingan" },
+      { status: 500 }
+    );
+  }
+}

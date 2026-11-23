@@ -15,6 +15,8 @@ import {
   Calendar,
   Heart,
   MessageCircle,
+  AlertTriangle,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { StatusBadge, PostStatusType } from "@/components/common/status-badge";
@@ -22,6 +24,14 @@ import { EmptyState } from "@/components/common/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableHeader,
@@ -46,6 +56,8 @@ export default function PostsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [postToDelete, setPostToDelete] = useState<any | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const loadPosts = async () => {
     setIsLoading(true);
@@ -95,13 +107,24 @@ export default function PostsPage() {
     toast.success("Konten postingan berhasil disalin ke clipboard!");
   };
 
-  const handleDelete = async (id: string) => {
+  const handleConfirmDelete = async () => {
+    if (!postToDelete) return;
+    setIsDeleting(true);
     try {
-      await deletePostAction(id);
-      setPostsList((prev) => prev.filter((p) => p.id !== id));
-      toast.success("Postingan berhasil dihapus.");
+      const res = await deletePostAction(postToDelete.id);
+      setPostsList((prev) => prev.filter((p) => p.id !== postToDelete.id));
+      if (res?.deletedFromThreads) {
+        toast.success("Postingan berhasil dihapus dari akun Threads (@kaitodex.19) dan ThreadMe.");
+      } else if (res?.threadsError) {
+        toast.warning(`Postingan dihapus dari database ThreadMe. Info Meta: ${res.threadsError}`);
+      } else {
+        toast.success("Postingan berhasil dihapus.");
+      }
+      setPostToDelete(null);
     } catch {
       toast.error("Gagal menghapus postingan.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -313,7 +336,7 @@ export default function PostsPage() {
                           size="icon"
                           className="h-8 w-8 text-destructive hover:bg-destructive/10"
                           title="Hapus postingan"
-                          onClick={() => handleDelete(post.id)}
+                          onClick={() => setPostToDelete(post)}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -337,6 +360,97 @@ export default function PostsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Confirmation & Warning Dialog Before Deleting Post */}
+      <Dialog
+        open={!!postToDelete}
+        onOpenChange={(open) => {
+          if (!open && !isDeleting) setPostToDelete(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-destructive/10 text-destructive flex items-center justify-center shrink-0">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-bold text-foreground">
+                  Hapus Postingan dari Threads?
+                </DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground mt-0.5">
+                  Konfirmasi penghapusan permanen konten
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2 text-xs">
+            {postToDelete?.status === "published" || postToDelete?.threadsMediaId ? (
+              <div className="p-3.5 rounded-xl border border-destructive/30 bg-destructive/10 text-destructive space-y-1.5">
+                <p className="font-semibold flex items-center gap-1.5">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  Peringatan: Postingan Akan Terhapus dari Akun Threads!
+                </p>
+                <p className="text-destructive/90 leading-relaxed text-[11px]">
+                  Postingan ini sudah terbit di akun resmi Threads <strong>@kaitodex.19</strong>. Menghapusnya di sini akan <strong>secara otomatis menghapus postingan tersebut langsung dari akun Threads Anda</strong> secara permanen. Tindakan ini tidak dapat dibatalkan.
+                </p>
+              </div>
+            ) : (
+              <div className="p-3 rounded-xl border border-border bg-muted/40 text-muted-foreground">
+                <p className="text-[11px] leading-relaxed">
+                  Postingan berstatus <strong>{postToDelete?.status}</strong> ini akan dihapus secara permanen dari sistem ThreadMe.
+                </p>
+              </div>
+            )}
+
+            <div className="p-3 rounded-xl border border-border bg-card space-y-1.5">
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                Topik / Isi Postingan:
+              </span>
+              <p className="font-medium text-foreground text-xs line-clamp-3">
+                {postToDelete?.topic || postToDelete?.items?.[0]?.content}
+              </p>
+              {postToDelete?.publishedAt && (
+                <p className="text-[10px] text-muted-foreground font-mono">
+                  Waktu Terbit: {formatDateIndo(postToDelete.publishedAt)}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPostToDelete(null)}
+              disabled={isDeleting}
+              className="text-xs"
+            >
+              Batal
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleConfirmDelete}
+              disabled={isDeleting}
+              className="gap-1.5 text-xs font-semibold"
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Menghapus dari Threads...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Ya, Hapus Sekarang
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

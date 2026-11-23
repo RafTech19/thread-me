@@ -30,6 +30,7 @@ export async function GET(request: Request) {
     "threads_content_publish",
     "threads_manage_insights",
     "threads_read_replies",
+    "threads_delete",
   ].join(",");
 
   const authUrl = `https://threads.net/oauth/authorize?client_id=${appId}&redirect_uri=${encodeURIComponent(

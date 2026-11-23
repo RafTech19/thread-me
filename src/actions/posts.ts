@@ -113,18 +113,73 @@ export async function cancelPostAction(postId: string) {
 export async function deletePostAction(postId: string) {
   await requireOwner();
 
-  if (db) {
+  let targetDb: any = db;
+  if (!targetDb && process.env.DATABASE_URL) {
+    const { neon } = await import("@neondatabase/serverless");
+    const { drizzle } = await import("drizzle-orm/neon-http");
+    const sql = neon(process.env.DATABASE_URL);
+    targetDb = drizzle(sql, { schema });
+  }
+
+  let deletedFromThreads = false;
+  let threadsError: string | undefined = undefined;
+
+  if (targetDb) {
     try {
-      await db.delete(schema.posts).where(eq(schema.posts.id, postId));
+      // 1. Cari postingan terlebih dahulu untuk mendapatkan threadsMediaId
+      const post = await targetDb.query.posts.findFirst({
+        where: eq(schema.posts.id, postId),
+        with: {
+          items: true,
+        },
+      });
+
+      if (post) {
+        // 2. Kumpulkan seluruh mediaId Threads terkait postingan ini
+        const mediaIdsToDelete: string[] = [];
+        if (post.threadsMediaId && !post.threadsMediaId.startsWith("mock_")) {
+          mediaIdsToDelete.push(post.threadsMediaId);
+        }
+        if (post.items) {
+          for (const item of post.items) {
+            if (
+              item.threadsMediaId &&
+              !item.threadsMediaId.startsWith("mock_") &&
+              !mediaIdsToDelete.includes(item.threadsMediaId)
+            ) {
+              mediaIdsToDelete.push(item.threadsMediaId);
+            }
+          }
+        }
+
+        // 3. Jika pernah terbit di Threads, hapus via Meta Threads API
+        if (mediaIdsToDelete.length > 0) {
+          const client = new ThreadsClient();
+          await client.init();
+
+          for (const mId of mediaIdsToDelete) {
+            const delRes = await client.deletePost(mId);
+            if (delRes.success) {
+              deletedFromThreads = true;
+            } else if (delRes.error) {
+              threadsError = delRes.error;
+            }
+          }
+        }
+
+        // 4. Hapus dari database lokal (cascade menghapus items dan metrics)
+        await targetDb.delete(schema.posts).where(eq(schema.posts.id, postId));
+      }
     } catch (err) {
-      console.warn("Gagal hapus post di DB:", err);
+      console.warn("Gagal hapus post di DB / Threads:", err);
+      throw err;
     }
   }
 
   revalidatePath("/posts");
   revalidatePath("/queue");
   revalidatePath("/dashboard");
-  return { success: true };
+  return { success: true, deletedFromThreads, threadsError };
 }
 
 export async function getPostsAction() {
